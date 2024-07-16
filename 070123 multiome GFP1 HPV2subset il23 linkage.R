@@ -84,84 +84,85 @@ library("ggrepel")
 
 
 
-stim.data21 <-Read10X_h5(filename = '/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/2filtered_feature_bc_matrix.h5',
+sample_file_path = '/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/2filtered_feature_bc_matrix.h5' 
+atac_fragments <- "/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/atac_fragments.tsv.gz"
+project_label = "HPV"
+selected_genome = EnsDb.Mmusculus.v79
+search_pattern = "^mt-"
+
+control_file_path = '/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/GFP-1-GEX_out/2filtered_feature_bc_matrix.h5'
+
+
+##########################################################
+
+read_10x <- function (file_path){
+  data_file <- Read10X_h5 (finemane = file_path,
+                            use.names = TRUE,
+                            unique.features = TRUE)
+  return data_file
+}
+
+columns_selection <- function (s4_matrices, column_name){
+    selected_column <- s4_matrices$column_name
+    return selected_column
+}
+
+
+###########################################################
+sample_s4_matrices <- read_10x(sample_file_path)
+control_s4_matrics <- read_10(control_file_path)
+
+sample_s4_matrix_rna <- columns_selection(sample_s4_matrices, "Gene Expression")
+
+
+s4_matrices <-Read10X_h5(filename = sample_file_path,
                            use.names = TRUE,
                            unique.features = TRUE)
-stim.datarna <-  stim.data21$`Gene Expression`
-stim.dataatac <-  stim.data21$`Peaks`
 
-stim21 <- CreateSeuratObject(counts = stim.datarna, project = "HPV", min.cells = 5)
 
-# ATAC analysis add gene annotation information
-grange.counts <- StringToGRanges(rownames(stim.dataatac), sep = c(":", "-"))
-grange.use <- seqnames(grange.counts) %in% standardChromosomes(grange.counts)
-stim.dataatac <- stim.dataatac[as.vector(grange.use), ]
-annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
+
+
+s4_matrix_rna <-  s4_matrices$`Gene Expression`
+s4_matrix_atac <-  s4_matrices$`Peaks`
+
+seurat_obj_rna <- CreateSeuratObject(counts = s4_matrix_rna, project = project_label, min.cells = 5)
+
+# Setting the table
+table_chr_coord <- StringToGRanges(rownames(s4_matrix_atac), sep = c(":", "-"))
+table_chr_named_coord <- seqnames(table_chr_coord) %in% standardChromosomes(table_chr_coord)
+s4_matrix_atac_named_coord <- s4_matrix_atac[as.vector(table_chr_named_coord), ]
+
+# Setting reference annotations
+annotations <- GetGRangesFromEnsDb(ensdb = selected_genome)
 seqlevelsStyle(annotations) <- "UCSC"
 genome(annotations) <- "mm39"
 
-frag.filehpv <- "/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/atac_fragments.tsv.gz"
 chrom_assay <- CreateChromatinAssay(
-  counts = stim.dataatac,
+  counts = s4_matrix_atac_named_coord,
   sep = c(":", "-"),
   genome = 'mm39',
-  fragments = frag.filehpv,
+  fragments = atac_fragments,
   min.cells = 10,
   annotation = annotations
 )
 
-stim21[["ATAC"]] <- chrom_assay
+# Add new column with chrom_assay object
+seurat_obj_rna[["ATAC"]] <- chrom_assay
 
-#QC
-stim21[["percent.mt"]] <- PercentageFeatureSet(stim21, pattern = "^mt-")
-VlnPlot(stim21, features = c("nCount_ATAC", "nCount_RNA","percent.mt"), ncol = 3,
+#QC start
+#calculate the percentage of counts or expression for features
+seaurat_obj_rna[["percent.mt"]] <- PercentageFeatureSet(seaurat_obj_rna, pattern = search_pattern)
+
+#Violin plot visualization for the percentage
+VlnPlot(seaurat_obj_rna, features = c("nCount_ATAC", "nCount_RNA","percent.mt"), ncol = 3,
         log = TRUE, pt.size = 0)
-stim21 <- subset(stim21, subset = nCount_ATAC >5e3 & nFeature_RNA > 1000 & nFeature_RNA < 3500 & percent.mt < 30 & nCount_RNA >2000)
 
-
-# We exclude the first dimension as this is typically correlated with sequencing depth
-#stim21 <- RunTFIDF(stim21)
-#stim21 <- FindTopFeatures(stim21, min.cutoff = "q0")
-#stim21 <- RunSVD(stim21)
-#stim21 <- RunUMAP(stim21, reduction = "lsi", dims = 2:30, reduction.name = "umap.atac", reduction.key = "atacUMAP_")
-
-#RNA analysis
-# RNA analysis
-#DefaultAssay(stim21) <- "RNA"
-#stim21 <- SCTransform(stim21, verbose = FALSE) %>% RunPCA() %>% RunUMAP(dims = 1:50, reduction.name = 'umap.rna', reduction.key = 'rnaUMAP_')
-#stim21 <- NormalizeData(stim21, assay = 'Gene Expression', verbose = FALSE)
-#stim21 <- FindVariableFeatures(stim21, selection.method = "vst", nfeatures = 2000)
-#umap
-#stim21 <- FindMultiModalNeighbors(stim21, reduction.list = list("pca", "lsi"), dims.list = list(1:50, 2:50))
-#stim21 <- RunUMAP(stim21, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_")
-#stim21 <- FindClusters(stim21, graph.name = "wsnn", algorithm = 3, verbose = FALSE)
-
-#p11 <- DimPlot(stim21, reduction = "umap.rna", label = TRUE, label.size = 2.5, repel = TRUE) + ggtitle("RNA")
-#p12 <- DimPlot(stim21, reduction = "umap.atac", label = TRUE, label.size = 2.5, repel = TRUE) + ggtitle("ATAC")
-#p13 <- DimPlot(stim21, reduction = "wnn.umap", label = TRUE, label.size = 2.5, repel = TRUE) + ggtitle("WNN")
-#p11 + p12 + p13 & NoLegend() & theme(plot.title = element_text(hjust = 0.5))
-#p13
-#p14 <- FeaturePlot(object = stim21, 
-#                  features = "Il23a",
-#                  cols = c("grey", "green", "red","purple"), 
-#                  reduction = "wnn.umap",
-#                  order = TRUE,
-#                  pt.size = .5)
-#p23 <- VlnPlot(object = stim21, features = "Il23a", pt.size = 1) + scale_y_continuous(limits = c(0.001,3))# + stat_compare_means(comparisons = comparisons1, label = "p.signif")
-
-#plot_grid(p23,p3,p4)
-
-#Il23expressionfreqHPV <- data.frame(FetchData(object = stim21, vars =  'Il23a'))# + stat_compare_means(comparisons = comparisons1, label = "p.signif")
-#write.csv(Il23expressionfreqHPV, "/Users/rubenprins/Downloads/Il23expressionfreqhpv.csv")
-
-#CoveragePlot(stim21, region = 'Il23a', features = 'Il23a', assay = 'ATAC', expression.assay = 'SCT', peaks = FALSE, ymax = 20)
+#Sets boundaries for the cell events to be included        
+seurat_obj_rna <- subset(seurat_obj_rna, subset = nCount_ATAC >5e3 & nFeature_RNA > 1000 & nFeature_RNA < 3500 & percent.mt < 30 & nCount_RNA >2000)
 
 
 
 
-
-
-ctrl.data12 <- Read10X_h5(filename = '/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/GFP-1-GEX_out/2filtered_feature_bc_matrix.h5', use.names = TRUE, unique.features = TRUE)
 
 
 ctrl.datarna <-  ctrl.data12$`Gene Expression`
