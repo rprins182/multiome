@@ -3,45 +3,6 @@
 # data source: https://www.10xgenomics.com/resources/datasets/10-k-human-pbm-cs-multiome-v-1-0-chromium-controller-1-standard-2-0-0         
 
 # setwd("~/Desktop/demo/single_cell_RNASeq/scripts")
-
-# load libraries
-#install.packages("matrixStats")
-library(Seurat)
-library(tidyverse)
-library(cowplot)
-library(ggplot2)
-library(patchwork)
-library(dplyr)
-library(fcoex)
-library(ggpubr)
-library(SingleR)
-library(glmGamPoi)
-library(sctransform)
-library("pheatmap")
-
-#devtools::install_github('exaexa/scattermore')
-
-
-#multiome
-library(Signac)
-library(EnsDb.Mmusculus.v79)
-library("LOLA")
-library(Biostrings)
-library(JASPAR2020)
-library(MotifDb)
-library(BSgenome.Mmusculus.UCSC.mm10)
-
-library(rtracklayer)
-library(BSgenome)
-library(GenomeInfoDb)
-library(PWMEnrich)
-library(PWMEnrich.Mmusculus.background)
-library('glmGamPoi')
-library("DESeq2")
-
-library("ggrepel")
-
-
 #BiocManager::install("GenomeInfoDb")
 #BiocManager::install('BSgenome')
 #BiocManager::install('rtracklayer')
@@ -73,25 +34,55 @@ library("ggrepel")
 #BiocManager::install("SingleR")
 #install.packages("remotes")
 #remotes::install_github("LTLA/celldex")
+#devtools::install_github('exaexa/scattermore')
 
+# load libraries
+#install.packages("matrixStats")
+library(Seurat)
+library(tidyverse)
+library(cowplot)
+library(ggplot2)
+library(patchwork)
+library(dplyr)
+library(fcoex)
+library(ggpubr)
+library(SingleR)
+library(glmGamPoi)
+library(sctransform)
+library("pheatmap")
 
-# Load the GFP and HPV datasets
-#stim.data1 <- Read10X_h5(filename = '//Users/rubenprins/Downloads/HPV-1-GEX_out/filtered_feature_bc_matrix.h5', use.names = TRUE, unique.features = TRUE)
+#multiome
+library(Signac)
+library(EnsDb.Mmusculus.v79)
+library("LOLA")
+library(Biostrings)
+library(JASPAR2020)
+library(MotifDb)
+library(BSgenome.Mmusculus.UCSC.mm10)
 
-#stim.data2 <- Read10X_h5(filename = '//Users/rubenprins/Downloads/HPV-2-GEX_out/filtered_feature_bc_matrix.h5',
-#                        use.names = TRUE,
-#                        unique.features = TRUE)
+library(rtracklayer)
+library(BSgenome)
+library(GenomeInfoDb)
+library(PWMEnrich)
+library(PWMEnrich.Mmusculus.background)
+library('glmGamPoi')
+library("DESeq2")
 
+library("ggrepel")
 
+###############################################################
 
-sample_file_path = '/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/2filtered_feature_bc_matrix.h5' 
-atac_fragments <- "/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/atac_fragments.tsv.gz"
+#sample_file_path = '/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/2filtered_feature_bc_matrix.h5' 
+#sample_atac_fragments <- "/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/HPV-2-GEX_out/atac_fragments.tsv.gz"
 project_label = "HPV"
-selected_genome = EnsDb.Mmusculus.v79
 search_pattern = "^mt-"
-
+genome = "mm39"
 control_file_path = '/Users/rubenprins/Library/Mobile Documents/com~apple~CloudDocs/USC stuff/IL23 Transcription Factor work/10xGenomics Multiome sequencing/GFP-1-GEX_out/2filtered_feature_bc_matrix.h5'
-
+control_atac_fragments <- 
+# Setting reference annotations
+annotations <- GetGRangesFromEnsDb(ensdb = EnsDb.Mmusculus.v79)
+seqlevelsStyle(annotations) <- "UCSC"
+genome(annotations) <- genome
 
 ##########################################################
 
@@ -107,55 +98,74 @@ columns_selection <- function (s4_matrices, column_name){
     return selected_column
 }
 
+atac_table_settings <- function (s4_matrix){
+  table_chr_coord <- StringToGRanges(rownames(s4_matrix), sep = c(":", "-"))
+  table_chr_named_coord <- seqnames(table_chr_coord) %in% standardChromosomes(table_chr_coord)
+  s4_matrix_atac_named_coord <- s4_matrix_atac[as.vector(table_chr_named_coord), ]
+  return s4_matrix_atac_named_coord
+}
 
-###########################################################
+chrom_assay <- function (s4_matrix_atac_named_coord, annotations, genome, atac_fragments){
+  chrom_assay <- CreateChromatinAssay(
+    counts = s4_matrix_atac_named_coord,
+    sep = c(":", "-"),
+    genome = genome,
+    fragments = atac_fragments,
+    min.cells = 10,
+    annotation = annotations
+  )
+  return chrom_assay
+}
+
+add_to_seurat <- function(seurat_object, column_to_add, data_to_add = "", pattern = FALSE) {
+    if (pattern) {
+        data_to_add <- PercentageFeatureSet(seurat_obj, pattern = pattern)  # Assuming this function call is correct
+    }
+    seurat_object[[column_to_add]] <- data_to_add
+    return(seurat_object)
+}
+
+##########################################################
+
+
 sample_s4_matrices <- read_10x(sample_file_path)
-control_s4_matrics <- read_10(control_file_path)
+control_s4_matrices <- read_10(control_file_path)
 
-sample_s4_matrix_rna <- columns_selection(sample_s4_matrices, "Gene Expression")
+sample_s4_matrix_rna <- columns_selection(sample_s4_matrices, `Gene Expression`)
+sample_s4_matrix_atac <- columns_selection(sample_s4_matrices, `Peaks`)
 
+control_s4_matrix_rna <- columns_selection(control_s4_matrices, `Gene Expression`)
+control_s4_matrix_atac <- columns_selection(control_s4_matrices, `Peaks`)
 
-s4_matrices <-Read10X_h5(filename = sample_file_path,
-                           use.names = TRUE,
-                           unique.features = TRUE)
-
-
-
-
-s4_matrix_rna <-  s4_matrices$`Gene Expression`
-s4_matrix_atac <-  s4_matrices$`Peaks`
-
-seurat_obj_rna <- CreateSeuratObject(counts = s4_matrix_rna, project = project_label, min.cells = 5)
+sample_seurat_obj <- CreateSeuratObject(counts = sample_s4_matrix_rna, project = sample_project_label, min.cells = 5)
+control_seurat_obj <- CreateSeuratObject(counts = control_s4_matrix_rna, project = control_project_label, min.cells = 5)
 
 # Setting the table
-table_chr_coord <- StringToGRanges(rownames(s4_matrix_atac), sep = c(":", "-"))
-table_chr_named_coord <- seqnames(table_chr_coord) %in% standardChromosomes(table_chr_coord)
-s4_matrix_atac_named_coord <- s4_matrix_atac[as.vector(table_chr_named_coord), ]
+sample_s4_matrix_atac_named_coord <- atac_table_settings(sample_s4_matrix_atac)
+control_s4_matrix_atac_named_coord <- atac_table_settings(control_s4_matrix_atac)
 
-# Setting reference annotations
-annotations <- GetGRangesFromEnsDb(ensdb = selected_genome)
-seqlevelsStyle(annotations) <- "UCSC"
-genome(annotations) <- "mm39"
+sample_chrom_assay <- (sample_s4_matrix_atac_named_coord, annotation, sample_atac_fragments)
+control_chrom_assay <- (control_s4_matrix_atac_named_coord, annotation, control_atac_fragments)
 
-chrom_assay <- CreateChromatinAssay(
-  counts = s4_matrix_atac_named_coord,
-  sep = c(":", "-"),
-  genome = 'mm39',
-  fragments = atac_fragments,
-  min.cells = 10,
-  annotation = annotations
-)
-
+# FILTERING
 # Add new column with chrom_assay object
-seurat_obj_rna[["ATAC"]] <- chrom_assay
+sample_seurat_obj <- add_to_seurat(sample_seurat_obj, "ATAC", sample_chrom_assay)
+control_seurat_obj <- add_to_seurat(control_seurat_obj, "ATAC", control_chrom_assay)
 
-#QC start
-#calculate the percentage of counts or expression for features
-seaurat_obj_rna[["percent.mt"]] <- PercentageFeatureSet(seaurat_obj_rna, pattern = search_pattern)
+sample_seurat_obj <- add_to_seurat(sample_seurat_obj, "percent.mt", pattern=search_pattern)
+control_seurat_obj <- add_to_seurat(control_seurat_obj, "percent.mt", pattern=search_pattern)
+
 
 #Violin plot visualization for the percentage
-VlnPlot(seaurat_obj_rna, features = c("nCount_ATAC", "nCount_RNA","percent.mt"), ncol = 3,
+sample_qc_vlnplot <- VlnPlot(sample_seaurat_obj, features = c("nCount_ATAC", "nCount_RNA","percent.mt"), ncol = 3,
         log = TRUE, pt.size = 0)
+control_qc_vlnplot <- VlnPlot(control_seaurat_obj, features = c("nCount_ATAC", "nCount_RNA","percent.mt"), ncol = 3,
+        log = TRUE, pt.size = 0)
+
+
+
+
+
 
 #Sets boundaries for the cell events to be included        
 seurat_obj_rna <- subset(seurat_obj_rna, subset = nCount_ATAC >5e3 & nFeature_RNA > 1000 & nFeature_RNA < 3500 & percent.mt < 30 & nCount_RNA >2000)
