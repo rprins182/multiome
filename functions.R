@@ -144,8 +144,8 @@ control_seurat_obj <- CreateSeuratObject(counts = control_s4_matrix_rna, project
 sample_s4_matrix_atac_named_coord <- atac_table_settings(sample_s4_matrix_atac)
 control_s4_matrix_atac_named_coord <- atac_table_settings(control_s4_matrix_atac)
 
-sample_chrom_assay <- (sample_s4_matrix_atac_named_coord, annotation, sample_atac_fragments)
-control_chrom_assay <- (control_s4_matrix_atac_named_coord, annotation, control_atac_fragments)
+sample_chrom_assay <- (sample_s4_matrix_atac_named_coord, annotation, genome, sample_atac_fragments)
+control_chrom_assay <- (control_s4_matrix_atac_named_coord, annotation, genome, control_atac_fragments)
 
 # FILTERING
 # Add new column with chrom_assay object
